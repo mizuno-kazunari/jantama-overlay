@@ -1,0 +1,57 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>じゃんたま配信 コントロール</title><style>
+body{font-family:sans-serif;background:#1b1d26;color:#eee;margin:0;padding:16px;max-width:1100px}
+h1{font-size:22px}fieldset{border:1px solid #444;border-radius:8px;margin:12px 0;padding:12px}legend{color:#ffcc33;font-weight:bold}
+button{background:#3a3f55;color:#fff;border:0;border-radius:6px;padding:8px 14px;margin:3px;cursor:pointer}button:hover{background:#556}
+.pb{font-size:20px;font-weight:bold;width:80px}.pb1{background:#c9a000}.pb2{background:#888}.pb3{background:#a0582a}.pb4{background:#333}
+input,select{background:#2a2d3a;color:#fff;border:1px solid #555;border-radius:4px;padding:5px}input[type=number]{width:80px}
+table td{padding:3px 6px}.tab button.on{background:#ffcc33;color:#000}.hint{font-size:12px;opacity:.7}#st{position:fixed;right:12px;top:8px}
+</style></head><body><div id="st">●</div>
+<h1>🀄 じゃんたま配信オーバーレイ コントロール</h1>
+<div class="hint">OBSブラウザソース: <code id="ovurl"></code>（1920×1080）／ 検知: <a href="detector.html" target="_blank" style="color:#9cf">detector.html</a> ／ <a href="overlay.html" target="_blank" style="color:#9cf">オーバーレイを開く</a><br>
+※このページはOBSの「ドック → カスタムブラウザドック」で開くと、OBS内のオーバーレイとリアルタイム連動します。<br>
+<button onclick="navigator.clipboard.writeText(overlayURL()).then(()=>alert('設定入りURLをコピーしました。OBSのブラウザソースURLに貼ると、この時点の見た目で表示されます（自動更新はされません）'))">設定入りオーバーレイURLをコピー（予備）</button></div>
+<div class="tab"><b>モード:</b> <button data-m="rank">段位戦</button><button data-m="friend">友人戦</button></div>
+<fieldset id="fsRank"><legend>段位戦</legend>
+段位 <select id="rank"></select> 現在pt <input type="number" id="points"> 昇段pt <input type="number" id="max"> <button onclick="saveRank()">反映</button><br><br>
+今回の着順を追加（pt増減）: <input type="number" id="delta" value="0" placeholder="例 +45 / -60"><br>
+<button class="pb pb1" onclick="res(1)">1位</button><button class="pb pb2" onclick="res(2)">2位</button><button class="pb pb3" onclick="res(3)">3位</button><button class="pb pb4" onclick="res(4)">4位</button>
+<button onclick="api('/api/result/undo',{})">↶ 1つ戻す</button><button onclick="if(confirm('履歴をクリアしますか？'))api('/api/history/clear',{})">履歴クリア</button>
+<div>履歴: <b id="hist"></b></div><div class="hint">昇段pt到達で自動昇段（ptは昇段ptの半分にリセット）。0未満で降段（初心は降段なし）。実際の雀魂の初期pt/降段ルールは段位ごとに異なるため必要に応じて手動補正してください。</div>
+</fieldset>
+<fieldset id="fsFriend"><legend>友人戦</legend>
+ルームID <input id="roomId"> <br><br>テロップ <input id="telop" style="width:600px"><br>
+<label><input type="checkbox" id="marquee"> 流れるテロップ</label> 速度(秒/1周) <input type="number" id="speed"> <button onclick="saveFriend()">反映</button></fieldset>
+<fieldset><legend>立直演出</legend>
+<button onclick="api('/api/riichi/declare',{})" style="background:#c33">▶ 立直カットイン テスト</button>
+<button onclick="api('/api/riichi/start',{})">ループ開始</button><button onclick="api('/api/riichi/end',{})">■ 立直終了（ループ停止）</button> 状態: <b id="rstate"></b><br><br>
+カットイン動画 <select id="mcutin"></select> <input type="file" id="fcutin" accept="video/webm,video/*"> <button onclick="upl('cutin')">取り込み</button><button onclick="setUrl('cutin')">URL指定</button><br>
+ループ動画 <select id="mloop"></select> <input type="file" id="floop" accept="video/webm,video/*"> <button onclick="upl('loop')">取り込み</button><button onclick="setUrl('loop')">URL指定</button><br>
+音量 <input type="range" id="vol" min="0" max="1" step="0.05"> <div class="hint">取り込んだ動画はこのブラウザ（OBSドック）内のIndexedDBに保存され、同じOBS内のオーバーレイだけが再生できます。透過動画は WebM(VP9 + アルファ) 推奨。OBSブラウザソースで音を出すには「OBSで音声を制御する」をON。</div></fieldset>
+<fieldset><legend>色</legend>ゲージ開始 <input type="color" id="gaugeFrom"> ゲージ終了 <input type="color" id="gaugeTo"> ゲージ背景 <input type="color" id="gaugeBg"> 文字 <input type="color" id="text"></fieldset>
+<fieldset><legend>表示位置・サイズ</legend><table id="lay"></table><button onclick="if(confirm('全設定を初期化しますか？'))api('/api/settings/reset',{})">全設定を初期化</button></fieldset>
+<script src="common.js"></script><script>
+const $=id=>document.getElementById(id);let S,ranks;const NAMES={gauge:'段位ゲージ',history:'着順履歴',room:'ルームID',telop:'テロップ',cutin:'カットイン',loop:'立直中ループ'};
+$('ovurl').textContent=new URL('overlay.html',location.href).href;
+const post=b=>api('/api/settings',b);
+document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>post({mode:b.dataset.m}));
+function saveRank(){post({rank:{rank:$('rank').value,points:+$('points').value,max:+$('max').value}})}
+function res(p){api('/api/result',{place:p,delta:+$('delta').value||0})}
+function saveFriend(){post({friend:{roomId:$('roomId').value,telop:$('telop').value,marquee:$('marquee').checked,speed:+$('speed').value||15}})}
+['gaugeFrom','gaugeTo','gaugeBg','text'].forEach(k=>$(k).oninput=()=>post({colors:{[k]:$(k).value}}));
+$('vol').onchange=()=>post({media:{cutinVolume:+$('vol').value}});
+['cutin','loop'].forEach(k=>$('m'+k).onchange=()=>post({media:{[k]:$('m'+k).value}}));
+async function upl(k){const f=$('f'+k).files[0];if(!f)return alert('ファイルを選択してください');const key=Date.now()+'_'+f.name;await idbPut(key,f);await post({media:{[k]:'idb:'+key}});loadMedia()}
+function setUrl(k){const u=prompt('動画のURL（https://〜 .webm）');if(u){post({media:{[k]:u}});loadMedia()}}
+async function loadMedia(){const l=await api('/api/media');['cutin','loop'].forEach(k=>{$('m'+k).innerHTML='<option value="">（なし：CSS演出）</option>'+[...new Set(l.concat(S&&S.media[k]&&!l.includes(S.media[k])?[S.media[k]]:[]))].map(u=>`<option>${u}</option>`).join('');if(S)$('m'+k).value=S.media[k]})}
+function buildLayout(){const t=$('lay');t.innerHTML='<tr><td></td><td>X</td><td>Y</td><td>拡大率</td><td>表示</td></tr>';for(const k in NAMES){const l=S.layout[k];t.insertAdjacentHTML('beforeend',`<tr><td>${NAMES[k]}</td><td><input type=number data-k=${k} data-f=x value=${l.x}></td><td><input type=number data-k=${k} data-f=y value=${l.y}></td><td><input type=number step=0.05 data-k=${k} data-f=scale value=${l.scale}></td><td><input type=checkbox data-k=${k} data-f=visible ${l.visible?'checked':''}></td></tr>`)}
+ t.querySelectorAll('input').forEach(i=>i.oninput=()=>post({layout:{[i.dataset.k]:{[i.dataset.f]:i.type==='checkbox'?i.checked:+i.value}}}))}
+let first=true;
+function fill(r){document.querySelectorAll('[data-m]').forEach(b=>b.classList.toggle('on',b.dataset.m===S.mode));
+ const a=document.activeElement;const set=(id,v)=>{if($(id)!==a)$(id)[$(id).type==='checkbox'?'checked':'value']=v};
+ set('rank',S.rank.rank);set('points',S.rank.points);set('max',S.rank.max);$('hist').textContent=S.rank.history.join('-')||'（なし）';
+ set('roomId',S.friend.roomId);set('telop',S.friend.telop);set('marquee',S.friend.marquee);set('speed',S.friend.speed);
+ for(const k in S.colors)set(k,S.colors[k]);set('vol',S.media.cutinVolume);$('rstate').textContent=r.active?'立直中 ('+(r.source||'')+')':'なし';
+ if(first){first=false;buildLayout();loadMedia()}else{$('mcutin').value=S.media.cutin;$('mloop').value=S.media.loop}}
+(async()=>{const st=await api('/api/state');ranks=st.ranks;$('rank').innerHTML=ranks.map(r=>`<option>${r}</option>`).join('');S=st.settings;fill(st.riichi);
+ connectWS(m=>{if(m.type==='state'){S=m.settings;fill(m.riichi);$('st').style.color='#4f4'}});})();
+</script></body></html>

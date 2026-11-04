@@ -1,0 +1,55 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>オーバーレイ</title><style>
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:transparent;font-family:"Noto Sans JP","BIZ UDPGothic",sans-serif;color:#fff}
+.el{position:absolute;transform-origin:0 0}
+#gauge{width:520px;padding:14px 18px;background:rgba(0,0,0,.55);border-radius:14px}
+#rankName{font-size:40px;font-weight:900;text-shadow:0 2px 6px #000}
+#bar{height:26px;border-radius:13px;overflow:hidden;margin-top:8px;box-shadow:inset 0 0 6px #000}
+#fill{height:100%;width:0;transition:width 1s cubic-bezier(.2,.9,.3,1.2)}
+#pts{font-size:24px;margin-top:6px;text-align:right;font-weight:700}
+#history{display:flex;gap:8px;flex-wrap:wrap;max-width:900px;align-items:center}
+.b{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;box-shadow:0 3px 8px rgba(0,0,0,.6);animation:pop .5s}
+.p1{background:radial-gradient(#fff6a0,#d4a000);color:#5a3a00}.p2{background:radial-gradient(#fff,#9aa4b0);color:#333}.p3{background:radial-gradient(#ffcf9a,#a0582a)}.p4{background:radial-gradient(#777,#2a2a35)}
+.sep{font-size:28px;opacity:.7}
+@keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.25)}100%{transform:scale(1)}}
+#room{background:rgba(0,0,0,.6);padding:12px 26px;border-radius:12px;font-size:44px;font-weight:900;border-left:8px solid #ffcc33}
+#room small{font-size:22px;display:block;opacity:.8}
+#telop{width:1920px;height:60px;background:rgba(0,0,0,.65);overflow:hidden;white-space:nowrap;font-size:36px;line-height:60px}
+#telop span{display:inline-block;padding-left:20px}#telop.mq span{padding-left:100%;animation:mq linear infinite}
+@keyframes mq{to{transform:translateX(-100%)}}
+#cutin,#loopv{pointer-events:none}#cutin{width:1920px;height:1080px;display:none}#loopv{display:none}
+#cssCut{position:absolute;left:0;top:380px;width:1920px;height:320px;display:none;background:linear-gradient(90deg,transparent,rgba(220,0,0,.8),transparent);font-size:240px;font-weight:900;line-height:320px;text-align:center;text-shadow:0 0 20px #000;animation:cut 2s forwards}
+@keyframes cut{0%{transform:translateX(100%) skewX(-20deg)}20%,80%{transform:none}100%{transform:translateX(-100%);opacity:0}}
+.up{animation:flash 1.5s}@keyframes flash{0%,100%{filter:none}50%{filter:brightness(2) drop-shadow(0 0 20px gold)}}
+</style></head><body>
+<div id="gauge" class="el"><div id="rankName"></div><div id="bar"><div id="fill"></div></div><div id="pts"></div></div>
+<div id="history" class="el"></div>
+<div id="room" class="el"><small>ルームID</small><span id="rid"></span></div>
+<div id="telop" class="el"><span id="tt"></span></div>
+<video id="cutin" class="el" muted playsinline></video><div id="cssCut">立直</div>
+<video id="loopv" class="el" muted loop playsinline></video>
+<script src="common.js"></script><script>
+const $=id=>document.getElementById(id);let S;
+function place(id,l){const e=$(id);if(!l)return;e.style.left=l.x+'px';e.style.top=l.y+'px';e.style.transform=`scale(${l.scale})`;e.dataset.vis=l.visible}
+function render(){const L=S.layout,C=S.colors,rk=S.mode==='rank';
+ for(const k of ['gauge','history','room','telop'])place(k,L[k]);place('cutin',L.cutin);place('loopv',L.loop);
+ const show=(id,on)=>$(id).style.display=on&&L[id].visible?'':'none';
+ show('gauge',rk);show('history',rk);show('room',!rk);show('telop',!rk&&S.friend.telop);
+ $('gauge').style.color=C.text;$('bar').style.background=C.gaugeBg;$('fill').style.background=`linear-gradient(90deg,${C.gaugeFrom},${C.gaugeTo})`;
+ const R=S.rank;$('rankName').textContent=R.rank;$('pts').textContent=R.rank==='魂天'?R.points+' pt':`${R.points} / ${R.max}`;
+ $('fill').style.width=Math.max(0,Math.min(100,R.points/R.max*100))+'%';
+ const h=$('history'),cur=h.querySelectorAll('.b').length;if(cur!==R.history.length){h.innerHTML='';R.history.forEach((p,i)=>{if(i)h.insertAdjacentHTML('beforeend','<span class="sep">-</span>');const b=document.createElement('div');b.className='b p'+p;b.textContent=p;if(i<cur)b.style.animation='none';h.appendChild(b)})}
+ $('rid').textContent=S.friend.roomId;$('tt').textContent=S.friend.telop;$('telop').className='el'+(S.friend.marquee?' mq':'');$('tt').style.animationDuration=(S.friend.speed||15)+'s';
+ const cv=$('cutin');if(cv.dataset.src!==S.media.cutin){cv.dataset.src=S.media.cutin;mediaURL(S.media.cutin).then(u=>cv.src=u)}
+ const lv=$('loopv');if(lv.dataset.src!==S.media.loop){lv.dataset.src=S.media.loop;mediaURL(S.media.loop).then(u=>lv.src=u)}}
+let riichiOn=false;
+function startLoop(){if(!riichiOn||!S.media.loop||!S.layout.loop.visible)return;const v=$('loopv');v.style.display='';v.currentTime=0;v.play().catch(()=>{})}
+function playCut(){riichiOn=true;const v=$('cutin');stopLoop(true);
+ if(S.media.cutin&&S.layout.cutin.visible){v.style.display='';v.currentTime=0;v.muted=false;v.volume=S.media.cutinVolume??0.8;
+  v.play().catch(()=>{v.muted=true;return v.play()}).catch(()=>{v.style.display='none';cssCut()})}else cssCut()}
+function cssCut(){const c=$('cssCut');c.style.display='block';c.style.animation='none';c.offsetWidth;c.style.animation='';setTimeout(()=>{c.style.display='none';startLoop()},2000)}
+$('cutin').onended=()=>{$('cutin').style.display='none';startLoop()};$('cutin').onerror=()=>{};
+function stopLoop(keep){const v=$('loopv');v.pause();v.style.display='none';if(!keep)riichiOn=false}
+connectWS(m=>{if(m.type==='state'){S=m.settings;render();if(!m.riichi.active&&riichiOn)stopLoop()}
+ else if(m.type==='event'){const e=m.event;if(e.type==='riichi')playCut();else if(e.type==='loopStart'){riichiOn=true;startLoop()}else if(e.type==='riichiEnd'){$('cutin').pause();$('cutin').style.display='none';stopLoop()}
+ else if(e.type==='rankup'||e.type==='rankdown'){const g=$('gauge');g.classList.remove('up');g.offsetWidth;g.classList.add('up')}}});
+</script></body></html>
