@@ -6,7 +6,7 @@ const DEFAULTS={mode:'rank',rank:{rank:'雀傑1',points:600,max:1200,history:[]}
  layout:{gauge:{x:40,y:40,scale:1,visible:true},history:{x:40,y:170,scale:1,visible:true},room:{x:40,y:40,scale:1,visible:true},telop:{x:0,y:1020,scale:1,visible:true},cutin:{x:0,y:0,scale:1,visible:true},loop:{x:1500,y:700,scale:1,visible:true}},
  colors:{gaugeFrom:'#ffcc33',gaugeTo:'#ff5533',gaugeBg:'#202030',text:'#ffffff'},
  media:{cutin:SAMPLES[0],loop:SAMPLES[1],cutinVolume:0.8},
- detector:{region:{x:0.40,y:0.62,w:0.20,h:0.06},threshold:0.35,color:'#e8e0c8',tolerance:60,cooldownMs:8000,autoEnd:true}};
+ detector:{work:640,scales:'0.8,0.9,1,1.1,1.25',searchMode:'near',margin:0.12,track:true,rescan:10,startHits:3,endMisses:15,cooldownMs:8000,graceMs:6000,autoEnd:true,intervalMs:200,thOffset:0}};
 const clone=o=>JSON.parse(JSON.stringify(o));
 function merge(a,b){for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])){a[k]=merge(a[k]&&typeof a[k]==='object'?a[k]:{},b[k])}else a[k]=b[k]}return a}
 const KEY='jantama_state_v1',bc=('BroadcastChannel' in self)?new BroadcastChannel('jantama'):null;

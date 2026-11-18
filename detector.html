@@ -1,48 +1,148 @@
 <!doctype html><html lang="ja"><head><meta charset="utf-8"><title>立直 自動検知</title><style>
-body{font-family:sans-serif;background:#1b1d26;color:#eee;padding:16px}button{background:#3a3f55;color:#fff;border:0;border-radius:6px;padding:8px 14px;margin:3px}
-#wrap{position:relative;display:inline-block}#prev{width:960px;border:1px solid #555}#box{position:absolute;border:2px solid #f33;pointer-events:none}
-label{display:inline-block;margin:4px 12px 4px 0}.big{font-size:28px;font-weight:bold}canvas{border:1px solid #555;image-rendering:pixelated}
-.hint{font-size:12px;opacity:.7;max-width:960px}
+body{font-family:sans-serif;background:#1b1d26;color:#eee;padding:12px;margin:0;max-width:1000px}
+button{background:#3a3f55;color:#fff;border:0;border-radius:6px;padding:8px 14px;margin:3px;cursor:pointer}button:hover{background:#4a5070}
+button.main{background:#d0453a;font-weight:bold}button.ok{background:#2f8a4e}button:disabled{opacity:.4}
+.step{background:#252836;border-radius:10px;padding:10px 14px;margin:10px 0}.step h3{margin:2px 0 8px;font-size:16px}.step h3 b{background:#d0453a;border-radius:50%;display:inline-block;width:24px;height:24px;text-align:center;margin-right:6px}
+.hint{font-size:12px;opacity:.75;margin:4px 0}.cw{position:relative;display:inline-block;max-width:100%}canvas.view{width:100%;max-width:960px;border:1px solid #555;background:#000;display:block}
+#editor{cursor:crosshair}.big{font-size:26px;font-weight:bold}.tpl{display:flex;align-items:center;gap:10px;background:#1e2130;border-radius:8px;padding:6px;margin:4px 0;flex-wrap:wrap}
+.tpl canvas{max-width:160px;max-height:50px;background:#000;image-rendering:pixelated}.bar{position:relative;width:220px;height:14px;background:#111;border-radius:7px;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:#888}.bar i.on{background:#f44}.bar u{position:absolute;top:0;bottom:0;width:2px;background:#ff0}
+label{display:inline-block;margin:4px 12px 4px 0}input[type=number]{width:70px}details{margin-top:8px}summary{cursor:pointer}.st{font-size:13px;color:#9cf}
+#status{padding:6px 12px;border-radius:8px;background:#333;display:inline-block}
 </style></head><body>
-<h2>立直 自動検知（試作）</h2>
-<div class="hint">「画面キャプチャ開始」で雀魂のウィンドウ/タブを選択、またはOBS仮想カメラを選択。赤枠（検知領域）を自分の席の立直棒が置かれる位置（自分の手牌の上・卓中央寄り）に合わせます。プレビュー上をドラッグして領域を指定できます。<b>精度は実際の配信画面で調整が必要です。</b></div>
-<button onclick="capScreen()">画面キャプチャ開始</button><button onclick="capCam()">カメラ/OBS仮想カメラ</button> <select id="cams"></select>
-<button onclick="snapRef()">現在の領域を「立直棒あり」の基準として保存</button><button onclick="ref=null;save()">基準クリア</button>
-<button onclick="send('riichiEnd')">立直終了（手動）</button>
-<div id="wrap"><video id="v" autoplay muted style="display:none"></video><canvas id="prev" width="960" height="540"></canvas><div id="box"></div></div>
-<div>
-<label>方式 <select id="method"><option value="color">色一致率（立直棒の白色）</option><option value="ref">基準画像との類似度</option></select></label>
-<label>しきい値 <input type="range" id="th" min="0.02" max="1" step="0.01"> <span id="thv"></span></label>
-<label>色 <input type="color" id="col"></label><label>色の許容差 <input type="range" id="tol" min="5" max="150"> <span id="tolv"></span></label>
-<label>クールダウン(ms) <input type="number" id="cd" style="width:80px"></label>
-<label>連続フレーム <input type="number" id="nf" value="2" min="1" style="width:50px"></label>
-<label><input type="checkbox" id="autoEnd"> 立直棒が消えたら自動で立直終了（局終了）</label></div>
-<div>スコア: <span class="big" id="score">-</span> 状態: <span class="big" id="state">待機</span></div>
-<div>領域拡大: <canvas id="zoom" width="320" height="100"></canvas> 基準: <canvas id="refc" width="320" height="100"></canvas></div>
-<script src="common.js"></script><script>
-const $=id=>document.getElementById(id);let S,D,ref=null,active=false,lastFire=0,hit=0,miss=0;const v=$('v'),pc=$('prev'),px=pc.getContext('2d',{willReadFrequently:true});
-const zc=$('zoom'),zx=zc.getContext('2d',{willReadFrequently:true});
-try{ref=JSON.parse(localStorage.ref||'null')}catch{}
-async function capScreen(){v.srcObject=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:10},audio:false})}
-async function capCam(){const id=$('cams').value;v.srcObject=await navigator.mediaDevices.getUserMedia({video:{deviceId:id?{exact:id}:undefined,width:1920,height:1080}});listCams()}
-async function listCams(){const d=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');$('cams').innerHTML=d.map(c=>`<option value="${c.deviceId}">${c.label||'カメラ'}</option>`).join('')}listCams();
-function save(){D={region:D.region,threshold:+$('th').value,color:$('col').value,tolerance:+$('tol').value,cooldownMs:+$('cd').value,autoEnd:$('autoEnd').checked,method:$('method').value};api('/api/settings',{detector:D});localStorage.ref=JSON.stringify(ref);drawRef()}
-['th','col','tol','cd','autoEnd','method'].forEach(k=>$(k).onchange=save);
-function ui(){$('th').value=D.threshold;$('col').value=D.color;$('tol').value=D.tolerance;$('cd').value=D.cooldownMs;$('autoEnd').checked=D.autoEnd;$('method').value=D.method||'color';$('thv').textContent=D.threshold;$('tolv').textContent=D.tolerance;box()}
-$('th').oninput=()=>$('thv').textContent=$('th').value;$('tol').oninput=()=>$('tolv').textContent=$('tol').value;
-function box(){const r=D.region,b=$('box');b.style.left=r.x*960+'px';b.style.top=r.y*540+'px';b.style.width=r.w*960+'px';b.style.height=r.h*540+'px'}
-let drag=null;pc.onmousedown=e=>{drag=[e.offsetX/960,e.offsetY/540]};pc.onmousemove=e=>{if(!drag)return;const x=e.offsetX/960,y=e.offsetY/540;D.region={x:Math.min(x,drag[0]),y:Math.min(y,drag[1]),w:Math.abs(x-drag[0])||.01,h:Math.abs(y-drag[1])||.01};box()};pc.onmouseup=()=>{drag=null;save()};
-const hex=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16));
-function region(){const r=D.region;zx.drawImage(pc,r.x*960,r.y*540,r.w*960,r.h*540,0,0,320,100);return zx.getImageData(0,0,320,100).data}
-function snapRef(){const d=region();const g=[];for(let i=0;i<d.length;i+=16)g.push((d[i]+d[i+1]+d[i+2])/3|0);ref=g;save()}
-function drawRef(){const c=$('refc').getContext('2d');c.clearRect(0,0,320,100);if(!ref)return;const im=c.createImageData(320,100);ref.forEach((g,j)=>{for(let k=0;k<4;k++){const i=(j*4+k)*4;im.data[i]=im.data[i+1]=im.data[i+2]=g;im.data[i+3]=255}});c.putImageData(im,0,0)}
-function score(d){if(D.method==='ref'&&ref){let s=0,n=0;for(let i=0,j=0;i<d.length;i+=16,j++){s+=Math.abs((d[i]+d[i+1]+d[i+2])/3-ref[j]);n++}return Math.max(0,1-s/n/64)}
- const [R,G,B]=hex(D.color),t=D.tolerance;let m=0,n=0;for(let i=0;i<d.length;i+=8){n++;if(Math.abs(d[i]-R)<t&&Math.abs(d[i+1]-G)<t&&Math.abs(d[i+2]-B)<t)m++}return m/n}
+<h2 style="margin:4px 0">立直 自動検知</h2>
+<div class="hint">雀魂のウィンドウを取り込み、登録した「立直マーク」の画像と照合して立直中かどうかを判定します。ウィンドウの大きさが変わっても自動で追従します。<br>
+<b>OBSのオーバーレイと連動させるには、このページをOBSの「カスタムブラウザドック」で開いてください。</b></div>
+
+<div class="step"><h3><b>1</b>雀魂のウィンドウを選ぶ</h3>
+<button class="main" onclick="capWindow()">ウィンドウを選択</button>
+<span class="hint">または</span> <button onclick="capCam()">OBS仮想カメラ/カメラを使う</button> <select id="cams"></select>
+<button onclick="stopCap()">取り込み停止</button>
+<div class="st" id="srcInfo">未接続</div>
+<div class="hint">「ウィンドウ」タブで雀魂（Mahjong Soul）のウィンドウを選択します。ドック内でウィンドウ選択が出ない／真っ黒になる場合は、OBSの「仮想カメラ開始」→「OBS仮想カメラ」を使ってください。</div>
+</div>
+
+<div class="step"><h3><b>2</b>立直マークを登録する</h3>
+<button class="main" onclick="$('fPos').click()">立直中のスクショを読み込む</button><input type="file" id="fPos" accept="image/*" hidden>
+<button onclick="useFrame()">今のウィンドウ画面を使う</button>
+<button onclick="$('fNeg').click()">（任意）立直していないスクショ</button><input type="file" id="fNeg" accept="image/*" hidden>
+<span class="st" id="negInfo"></span>
+<div class="hint">スクショは Ctrl+V で貼り付けもできます。読み込んだ画像の上で<b>自分の立直棒（自分の捨て牌の上・卓中央寄りに置かれる1000点棒）をドラッグで囲み</b>、「登録」を押します。棒の少し外側まで含めて囲むと安定します。<br>
+「立直していないスクショ」を入れると、しきい値（判定ライン）を自動で調整します。同じ場面・同じ卓デザインのものがおすすめです。</div>
+<div class="cw"><canvas id="editor" class="view" width="960" height="540"></canvas></div>
+<div><button class="ok" id="btnReg" onclick="registerCrop()" disabled>この範囲を登録</button> 名前 <input id="tplName" value="自分の立直棒" style="width:140px">
+<button onclick="testOnImage()">この画像で照合テスト</button> <span class="st" id="testInfo"></span></div>
+<div id="tplList"></div>
+</div>
+
+<div class="step"><h3><b>3</b>検知スタート</h3>
+<button class="main" id="btnRun" onclick="toggleRun()">検知開始</button>
+<button onclick="send('riichi')">立直カットイン（手動）</button><button onclick="send('riichiEnd')">立直終了（手動）</button>
+<div style="margin:6px 0">状態: <span class="big" id="status">停止中</span> <span class="st" id="perf"></span></div>
+<div class="cw"><canvas id="prev" class="view" width="960" height="540"></canvas></div>
+<div class="hint">黄色の点線＝探索範囲、枠＝最も似ている場所（赤＝立直マーク検出）。</div>
+
+<details><summary>詳細設定</summary>
+<label>探索範囲 <select id="searchMode"><option value="near">登録位置の周辺（自分の立直だけ）</option><option value="full">画面全体（他家の棒にも反応）</option></select></label>
+<label>周辺の広さ <input type="number" id="margin" step="0.01" min="0.02" max="0.5"></label>
+<label>解析解像度(幅px) <select id="work"><option>480</option><option>640</option><option>960</option></select></label>
+<label>スケール候補 <input id="scales" style="width:170px"></label><br>
+<label><input type="checkbox" id="track"> 見つけた場所の近くだけ探す（高速化）</label>
+<label>全体再探索の間隔(フレーム) <input type="number" id="rescan" min="1"></label><br>
+<label>開始に必要な連続検出 <input type="number" id="startHits" min="1"></label>
+<label>終了に必要な連続未検出 <input type="number" id="endMisses" min="1"></label>
+<label>解析間隔(ms) <input type="number" id="intervalMs" min="50" step="50"></label><br>
+<label>クールダウン(ms) <input type="number" id="cooldownMs" step="500"></label>
+<label>カットイン後に終了判定しない時間(ms) <input type="number" id="graceMs" step="500"></label>
+<label>しきい値の補正 <input type="number" id="thOffset" step="0.01" min="-0.3" max="0.3"></label><br>
+<label><input type="checkbox" id="autoEnd"> 立直棒が消えたら自動で立直終了（局の終了）</label>
+<div class="hint">しきい値はテンプレートごとに設定できます（一覧の数値）。誤検知が多い→しきい値を上げる／検出されない→下げる。OBS仮想カメラ入力ではオーバーレイも映るため、カットインが立直棒に重なる配置は避けてください。</div>
+</details>
+</div>
+<video id="v" autoplay muted playsinline style="display:none"></video>
+<script src="common.js"></script><script src="riichi-match.js"></script><script>
+const $=id=>document.getElementById(id),RM=window.RiichiMatch;
+const TKEY='jantama_det_templates_v2',NKEY='jantama_det_negative_v2';
+let D=null,active=false,running=false,timer=null,frameNo=0,tracker=null;const v=$('v');
+let templates=[];// {id,name,png,rx,ry,rw,rh,srcW,srcH,threshold,enabled,calPos,calNeg,g,last}
+let negGray=null;// 立直なしスクショ（グレー、最大1280幅）
+const work=document.createElement('canvas'),wx=work.getContext('2d',{willReadFrequently:true});
+// ===== 画像 → 解析用グレー =====
+function toGray(src,sw,sh,W){const w=W||+D.work,h=Math.round(sh*w/sw);work.width=w;work.height=h;wx.imageSmoothingEnabled=true;wx.imageSmoothingQuality='high';wx.drawImage(src,0,0,w,h);return RM.fromRGBA(wx.getImageData(0,0,w,h).data,w,h)}
+function grayFromImg(img,maxW){const w=Math.min(maxW||img.naturalWidth||img.width,img.naturalWidth||img.width);const sw=img.naturalWidth||img.width,sh=img.naturalHeight||img.height;return toGray(img,sw,sh,w)}
+function grayToCanvas(g,c){c.width=g.w;c.height=g.h;const x=c.getContext('2d'),im=x.createImageData(g.w,g.h);for(let i=0;i<g.d.length;i++){const q=i*4;im.data[q]=im.data[q+1]=im.data[q+2]=g.d[i];im.data[q+3]=255}x.putImageData(im,0,0)}
+function loadImg(src){return new Promise((ok,ng)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=ng;i.src=src})}
+function fileToImg(f){return loadImg(URL.createObjectURL(f))}
+// ===== 1. 入力 =====
+async function capWindow(){try{const s=await navigator.mediaDevices.getDisplayMedia({video:{displaySurface:'window',frameRate:{ideal:10,max:15}},audio:false,preferCurrentTab:false,selfBrowserSurface:'exclude',surfaceSwitching:'include'});useStream(s,'ウィンドウ')}catch(e){$('srcInfo').textContent='ウィンドウ選択がキャンセル/拒否されました: '+e.message}}
+async function capCam(){try{const id=$('cams').value;const s=await navigator.mediaDevices.getUserMedia({video:{deviceId:id?{exact:id}:undefined,width:{ideal:1920},height:{ideal:1080}}});useStream(s,'カメラ');listCams()}catch(e){$('srcInfo').textContent='カメラを開けません: '+e.message}}
+async function listCams(){try{const d=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');const cur=$('cams').value;$('cams').innerHTML=d.map(c=>`<option value="${c.deviceId}">${c.label||'カメラ'}</option>`).join('');const obs=d.find(c=>/obs/i.test(c.label));if(cur)$('cams').value=cur;else if(obs)$('cams').value=obs.deviceId}catch{}}
+function stopCap(){if(v.srcObject)v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;$('srcInfo').textContent='未接続'}
+function useStream(s,label){stopCap();v.srcObject=s;const t=s.getVideoTracks()[0];t&&(t.onended=()=>{$('srcInfo').textContent='取り込みが終了しました（ウィンドウが閉じられた等）'});
+ v.onloadedmetadata=()=>{v.play().catch(()=>{});$('srcInfo').textContent=`${label}を取り込み中 (${v.videoWidth}×${v.videoHeight})`;drawPreview()};if(!running&&templates.length)toggleRun()}
+// ===== 2. テンプレート登録 =====
+const ed=$('editor'),ex=ed.getContext('2d');let edImg=null,edCrop=null,drag=null;
+function showEditor(img){edImg=img;edCrop=null;const w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;ed.width=960;ed.height=Math.round(960*h/w);drawEditor();$('btnReg').disabled=true;$('testInfo').textContent=''}
+function drawEditor(res){ex.clearRect(0,0,ed.width,ed.height);if(!edImg){ex.fillStyle='#777';ex.font='18px sans-serif';ex.fillText('ここに立直中のスクショが表示されます（Ctrl+Vで貼り付け可）',20,40);return}
+ ex.drawImage(edImg,0,0,ed.width,ed.height);if(edCrop){const c=edCrop;ex.fillStyle='rgba(0,0,0,.45)';ex.fillRect(0,0,ed.width,c.y);ex.fillRect(0,c.y+c.h,ed.width,ed.height-c.y-c.h);ex.fillRect(0,c.y,c.x,c.h);ex.fillRect(c.x+c.w,c.y,ed.width-c.x-c.w,c.h);ex.strokeStyle='#0f0';ex.lineWidth=2;ex.strokeRect(c.x,c.y,c.w,c.h)}
+ if(res)drawBoxes(ex,res,ed.width/res.fw)}
+function edPos(e){const r=ed.getBoundingClientRect();return[(e.clientX-r.left)*ed.width/r.width,(e.clientY-r.top)*ed.height/r.height]}
+ed.onmousedown=e=>{if(!edImg)return;drag=edPos(e)};addEventListener('mousemove',e=>{if(!drag)return;const[x,y]=edPos(e);edCrop={x:Math.max(0,Math.min(x,drag[0])),y:Math.max(0,Math.min(y,drag[1])),w:Math.abs(x-drag[0]),h:Math.abs(y-drag[1])};drawEditor()});
+addEventListener('mouseup',()=>{if(!drag)return;drag=null;$('btnReg').disabled=!(edCrop&&edCrop.w>=4&&edCrop.h>=3)});
+$('fPos').onchange=async e=>{const f=e.target.files[0];if(f)showEditor(await fileToImg(f));e.target.value=''};
+$('fNeg').onchange=async e=>{const f=e.target.files[0];if(f)await setNegative(await fileToImg(f));e.target.value=''};
+addEventListener('paste',async e=>{const it=[...(e.clipboardData||{}).items||[]].find(i=>i.type.startsWith('image/'));if(it)showEditor(await fileToImg(it.getAsFile()))});
+function useFrame(){if(!v.videoWidth){alert('先に手順1でウィンドウを選択してください');return}const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);loadImg(c.toDataURL('image/png')).then(showEditor)}
+async function setNegative(img){negGray=grayFromImg(img,1280);const c=document.createElement('canvas');c.width=negGray.w;c.height=negGray.h;c.getContext('2d').drawImage(img,0,0,c.width,c.height);try{localStorage[NKEY]=c.toDataURL('image/jpeg',0.9)}catch{}
+ templates.forEach(calib);saveTpl();renderList();$('negInfo').textContent='立直なしスクショ登録済み（しきい値を自動調整しました）'}
+function opts(extra){return Object.assign({scales:String(D.scales).split(',').map(Number).filter(x=>x>0),region:D.searchMode,margin:+D.margin},extra||{})}
+// しきい値の自動調整: 元画像を少し縮小した「立直あり」と「立直なし」で照合スコアを比べる
+function calib(t){let pos=t.calPos;if(t._src){const pg=RM.resize(t._src,Math.round(t._src.w*0.83),Math.round(t._src.h*0.83));pos=RM.match(RM.resize(pg,+D.work,Math.round(pg.h*D.work/pg.w)),t,opts()).s}if(pos==null)return;
+ const neg=negGray?RM.match(RM.resize(negGray,+D.work,Math.round(negGray.h*D.work/negGray.w)),t,opts()).s:null;t.calPos=+pos.toFixed(3);t.calNeg=neg==null?null:+neg.toFixed(3);t.threshold=+RM.calibrate(pos,neg).toFixed(3)}
+async function registerCrop(){const img=edImg,c=edCrop;if(!img||!c)return;const sw=img.naturalWidth||img.width,sh=img.naturalHeight||img.height,k=sw/ed.width;
+ const x=Math.round(c.x*k),y=Math.round(c.y*k),w=Math.max(4,Math.round(c.w*k)),h=Math.max(3,Math.round(c.h*k));const cc=document.createElement('canvas');cc.width=w;cc.height=h;cc.getContext('2d').drawImage(img,x,y,w,h,0,0,w,h);
+ const t={id:'t'+Date.now().toString(36),name:$('tplName').value||'立直マーク',png:cc.toDataURL('image/png'),rx:x/sw,ry:y/sh,rw:w/sw,rh:h/sh,srcW:sw,srcH:sh,enabled:true};
+ const full=grayFromImg(img,Math.min(sw,1920));t._src=full;await hydrate(t);calib(t);delete t._src;templates.push(t);saveTpl();renderList();edCrop=null;drawEditor();$('btnReg').disabled=true;
+ $('testInfo').textContent=`登録しました（しきい値 ${t.threshold}）`;if(v.videoWidth&&!running)toggleRun()}
+async function hydrate(t){const i=await loadImg(t.png);t.g=RM.fromRGBA((()=>{const c=document.createElement('canvas');c.width=i.width;c.height=i.height;const x=c.getContext('2d');x.drawImage(i,0,0);return x.getImageData(0,0,i.width,i.height).data})(),i.width,i.height)}
+function saveTpl(){localStorage[TKEY]=JSON.stringify(templates.map(({g,last,_src,roi,...r})=>r))}
+function renderList(){const L=$('tplList');L.innerHTML=templates.length?'':'<div class="hint">まだ登録されていません。</div>';templates.forEach((t,i)=>{const d=document.createElement('div');d.className='tpl';
+ d.innerHTML=`<input type="checkbox" ${t.enabled?'checked':''} title="有効"><canvas></canvas><div><b>${t.name.replace(/</g,'&lt;')}</b><div class="hint">${t.calNeg!=null?`立直あり ${t.calPos} / なし ${t.calNeg}`:`立直あり ${t.calPos??'-'}（立直なしスクショ未登録）`}</div></div>
+ <label>しきい値 <input type="number" step="0.01" min="0.2" max="0.99" value="${t.threshold}"></label><div><div class="bar"><i></i><u></u></div><span class="st sc">-</span></div><button>削除</button>`;
+ const cv=d.querySelector('canvas');loadImg(t.png).then(im=>{cv.width=im.width;cv.height=im.height;cv.getContext('2d').drawImage(im,0,0)});
+ d.querySelector('input[type=checkbox]').onchange=e=>{t.enabled=e.target.checked;saveTpl()};d.querySelector('input[type=number]').onchange=e=>{t.threshold=+e.target.value;saveTpl()};
+ d.querySelector('button').onclick=()=>{if(confirm('削除しますか？')){templates.splice(i,1);saveTpl();renderList()}};t._el=d;L.appendChild(d)})}
+function showScore(t,s){if(!t._el)return;const th=t.threshold+(+D.thOffset||0),i=t._el.querySelector('.bar i');i.style.width=Math.max(0,s)*100+'%';i.className=s>=th?'on':'';t._el.querySelector('.bar u').style.left=th*100+'%';t._el.querySelector('.sc').textContent=`スコア ${s.toFixed(3)} / しきい値 ${th.toFixed(2)}`}
+// 照合テスト: 画像全体で各テンプレートを照合し結果を描く
+function testOnImage(){if(!edImg){alert('画像を読み込んでください');return}if(!templates.length){alert('テンプレートを登録してください');return}const g=toGray(edImg,edImg.naturalWidth||edImg.width,edImg.naturalHeight||edImg.height);
+ const res=detect(g,false);drawEditor(res);$('testInfo').textContent=res.on?'→ 立直マークを検出しました':'→ 立直マークは見つかりませんでした';$('testInfo').style.color=res.on?'#f66':'#9cf'}
+// ===== 3. 検知 =====
+function detect(g,useRoi){const I=RM.integral(g),out={fw:g.w,items:[],on:false};for(const t of templates){if(!t.enabled||!t.g)continue;let roi=null;
+  if(useRoi&&D.track&&t.last&&t.last.hit&&frameNo%Math.max(1,+D.rescan)!==0){const L=t.last,m=Math.max(L.w,L.h);roi={x:L.x-m,y:L.y-m,w:L.w+2*m,h:L.h+2*m}}
+  const r=RM.match(g,t,opts({roi}),I);const th=t.threshold+(+D.thOffset||0);r.hit=r.s>=th;if(useRoi)t.last=r;out.items.push({t,r});if(r.hit)out.on=true}return out}
+function drawBoxes(x,res,k){x.lineWidth=2;for(const {r} of res.items){if(!r.region)continue;x.setLineDash([6,4]);x.strokeStyle='#ff0';x.strokeRect(r.region.x*k,r.region.y*k,r.region.w*k,r.region.h*k);x.setLineDash([]);
+ if(r.w){x.strokeStyle=r.hit?'#f33':'#aaa';x.lineWidth=r.hit?3:2;x.strokeRect(r.x*k,r.y*k,r.w*k,r.h*k);x.fillStyle=r.hit?'#f33':'#aaa';x.font='bold 16px sans-serif';x.fillText(r.s.toFixed(2),r.x*k,r.y*k-4)}}}
+const pc=$('prev'),px=pc.getContext('2d');
+function drawPreview(res){if(!v.videoWidth)return;const h=Math.round(960*v.videoHeight/v.videoWidth);if(pc.height!==h)pc.height=h;px.drawImage(v,0,0,960,h);if(res)drawBoxes(px,res,960/res.fw)}
+function newTracker(){tracker=new RM.Tracker({startHits:+D.startHits,endMisses:+D.endMisses,cooldownMs:+D.cooldownMs,graceMs:+D.graceMs});tracker.active=active}
+function toggleRun(){running=!running;$('btnRun').textContent=running?'検知停止':'検知開始';$('btnRun').className=running?'ok':'main';clearInterval(timer);if(running){newTracker();timer=setInterval(tick,Math.max(50,+D.intervalMs||200))}else setStatus('停止中','#333')}
+function setStatus(t,c){$('status').textContent=t;$('status').style.background=c}
+let lastBlackWarn=0;
+function tick(){if(!v.videoWidth){setStatus('入力なし（手順1）','#333');return}if(!templates.some(t=>t.enabled&&t.g)){drawPreview();setStatus('立直マーク未登録（手順2）','#333');return}
+ const t0=performance.now();const g=toGray(v,v.videoWidth,v.videoHeight);frameNo++;let mean=0;for(let i=0;i<g.d.length;i+=97)mean+=g.d[i];mean/=g.d.length/97;
+ const res=detect(g,true);const ms=performance.now()-t0;drawPreview(res);res.items.forEach(({t,r})=>showScore(t,r.s));
+ const ev=tracker.update(res.on,Date.now());if(ev==='riichi')send('riichi');else if(ev==='riichiEnd'&&D.autoEnd)send('riichiEnd');
+ setStatus(active?(res.on?'立直中（検出中）':'立直中'):(res.on?'検出中…':'監視中'),active?'#b3261e':res.on?'#a06010':'#2a4a7a');
+ $('perf').textContent=`解析 ${ms.toFixed(0)}ms / ${g.w}×${g.h}`+(mean<3?' ⚠ 画面が真っ黒です（ウィンドウ取り込み不可の場合はOBS仮想カメラを使用）':'')}
 function send(t){_ws&&_ws.readyState===1&&_ws.send(JSON.stringify({type:t}))}
-setInterval(()=>{if(!D||!v.videoWidth)return;px.drawImage(v,0,0,960,540);const s=score(region());$('score').textContent=s.toFixed(3);const on=s>=D.threshold,nf=+$('nf').value||1;
- if(on){hit++;miss=0}else{miss++;hit=0}
- if(!active&&hit>=nf&&Date.now()-lastFire>D.cooldownMs){lastFire=Date.now();send('riichi')}
- if(active&&D.autoEnd&&miss>=10)send('riichiEnd');
- $('state').textContent=(on?'検出中':'未検出')+' / '+(active?'立直中':'待機');$('state').style.color=on?'#f55':'#ccc'},200);
-connectWS(m=>{if(m.type==='state'){S=m.settings;active=m.riichi.active;if(!D){D=S.detector;ui();drawRef()}}});
+// ===== 設定 =====
+const KEYS=['searchMode','margin','work','scales','track','rescan','startHits','endMisses','intervalMs','cooldownMs','graceMs','thOffset','autoEnd'];
+function ui(){KEYS.forEach(k=>{const e=$(k);if(e.type==='checkbox')e.checked=!!D[k];else e.value=D[k]})}
+KEYS.forEach(k=>$(k).onchange=()=>{const e=$(k);D[k]=e.type==='checkbox'?e.checked:(e.type==='number'?+e.value:e.value);api('/api/settings',{detector:D});RM.clearCache();templates.forEach(t=>t.last=null);if(running){toggleRun();toggleRun()}});
+connectWS(m=>{if(m.type!=='state')return;const was=active;active=!!m.riichi.active;if(!D){D=Object.assign(clone(DEFAULTS.detector),m.settings.detector);ui();init()}
+ if(tracker&&was!==active){tracker.active=active;if(!active)tracker.hit=-1e9;else tracker.lastFire=Date.now()}});// 手動終了後は、棒が一度消えるまで再発火しない
+async function init(){try{templates=JSON.parse(localStorage[TKEY]||'[]')}catch{templates=[]}for(const t of templates)await hydrate(t).catch(()=>{});renderList();drawEditor();listCams();
+ const n=localStorage[NKEY];if(n){try{negGray=grayFromImg(await loadImg(n),1280);$('negInfo').textContent='立直なしスクショ登録済み'}catch{}}}
+// テスト用フック
+window.__det={useStream,get templates(){return templates},get D(){return D},toggleRun,get running(){return running}};
 </script></body></html>
