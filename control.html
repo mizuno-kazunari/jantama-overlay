@@ -8,8 +8,9 @@ table td{padding:3px 6px}.tab button.on{background:#ffcc33;color:#000}.hint{font
 </style></head><body><div id="st">●</div>
 <h1>🀄 じゃんたま配信オーバーレイ コントロール</h1>
 <div class="hint">OBSブラウザソース: <code id="ovurl"></code>（1920×1080）／ 検知: <a href="detector.html" target="_blank" style="color:#9cf">detector.html</a> ／ <a href="overlay.html" target="_blank" style="color:#9cf">オーバーレイを開く</a><br>
-※このページはOBSの「ドック → カスタムブラウザドック」で開くと、OBS内のオーバーレイとリアルタイム連動します。<br>
+※このページはOBSの「カスタムブラウザドック」で開くとそのまま連動します。普通のChrome/Edgeで開く場合は、下の「OBS WebSocket 接続」でOBSにつなぐと連動します。<br>
 <button onclick="navigator.clipboard.writeText(overlayURL()).then(()=>alert('設定入りURLをコピーしました。OBSのブラウザソースURLに貼ると、この時点の見た目で表示されます（自動更新はされません）'))">設定入りオーバーレイURLをコピー（予備）</button></div>
+<fieldset id="obsFs"><legend>OBS接続（Chrome/Edgeで使う場合）</legend><div id="obsPanel"></div></fieldset>
 <div class="tab"><b>モード:</b> <button data-m="rank">段位戦</button><button data-m="friend">友人戦</button></div>
 <fieldset id="fsRank"><legend>段位戦</legend>
 段位 <select id="rank"></select> 現在pt <input type="number" id="points"> 昇段pt <input type="number" id="max"> <button onclick="saveRank()">反映</button><br><br>
@@ -29,7 +30,11 @@ table td{padding:3px 6px}.tab button.on{background:#ffcc33;color:#000}.hint{font
 音量 <input type="range" id="vol" min="0" max="1" step="0.05"> <div class="hint">取り込んだ動画はこのブラウザ（OBSドック）内のIndexedDBに保存され、同じOBS内のオーバーレイだけが再生できます。透過動画は WebM(VP9 + アルファ) 推奨。OBSブラウザソースで音を出すには「OBSで音声を制御する」をON。</div></fieldset>
 <fieldset><legend>色</legend>ゲージ開始 <input type="color" id="gaugeFrom"> ゲージ終了 <input type="color" id="gaugeTo"> ゲージ背景 <input type="color" id="gaugeBg"> 文字 <input type="color" id="text"></fieldset>
 <fieldset><legend>表示位置・サイズ</legend><table id="lay"></table><button onclick="if(confirm('全設定を初期化しますか？'))api('/api/settings/reset',{})">全設定を初期化</button></fieldset>
-<script src="common.js"></script><script>
+<script src="common.js"></script><script src="obs-bridge.js"></script><script>
+// Chromeで開いた場合: 設定の変更を全状態ごとOBSのオーバーレイへ送る
+OBSB.fullSync=true;OBSB.onReady(()=>OBSB.sendState(ST,[]));
+OBSB.mountPanel(document.getElementById("obsPanel"),{extra:'<button onclick="OBSB.sendState(ST,[])">今の設定をOBSへ送信</button>'});
+if(window.obsstudio)document.getElementById("obsFs").querySelector("legend").textContent="OBS接続（OBSのドック内では不要です）";else OBSB.autoStart();
 const $=id=>document.getElementById(id);let S,ranks;const NAMES={gauge:'段位ゲージ',history:'着順履歴',room:'ルームID',telop:'テロップ',cutin:'カットイン',loop:'立直中ループ'};
 $('ovurl').textContent=new URL('overlay.html',location.href).href;
 const post=b=>api('/api/settings',b);

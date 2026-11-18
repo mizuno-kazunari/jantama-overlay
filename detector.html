@@ -12,7 +12,10 @@ label{display:inline-block;margin:4px 12px 4px 0}input[type=number]{width:70px}d
 </style></head><body>
 <h2 style="margin:4px 0">立直 自動検知</h2>
 <div class="hint">雀魂のウィンドウを取り込み、登録した「立直マーク」の画像と照合して立直中かどうかを判定します。ウィンドウの大きさが変わっても自動で追従します。<br>
-<b>OBSのオーバーレイと連動させるには、このページをOBSの「カスタムブラウザドック」で開いてください。</b></div>
+<b>このページは普通のChrome/Edgeで開き、下の「OBS WebSocket 接続」でOBSにつないでください。</b>（OBSのドック内では画面・カメラの取り込みが許可されません）</div>
+<div id="inObs" style="display:none;background:#7a1f1f;border-radius:8px;padding:10px;margin:8px 0;font-weight:bold">⚠ OBSのドック内で開いています。OBSのドックでは「ウィンドウ選択」も「カメラ」も使えません（Permission denied になります）。<br>
+このページのURLをChromeかEdgeで開き、「OBS WebSocket 接続」でOBSにつないでください。 <code id="selfUrl"></code></div>
+<div class="step" style="border:1px solid #3a5"><h3><b>0</b>OBSにつなぐ</h3><div id="obsPanel"></div></div>
 
 <div class="step"><h3><b>1</b>雀魂のウィンドウを選ぶ</h3>
 <button class="main" onclick="capWindow()">ウィンドウを選択</button>
@@ -60,7 +63,7 @@ label{display:inline-block;margin:4px 12px 4px 0}input[type=number]{width:70px}d
 </details>
 </div>
 <video id="v" autoplay muted playsinline style="display:none"></video>
-<script src="common.js"></script><script src="riichi-match.js"></script><script>
+<script src="common.js"></script><script src="obs-bridge.js"></script><script src="riichi-match.js"></script><script>
 const $=id=>document.getElementById(id),RM=window.RiichiMatch;
 const TKEY='jantama_det_templates_v2',NKEY='jantama_det_negative_v2';
 let D=null,active=false,running=false,timer=null,frameNo=0,tracker=null;const v=$('v');
@@ -134,7 +137,10 @@ function tick(){if(!v.videoWidth){setStatus('入力なし（手順1）','#333');
  const ev=tracker.update(res.on,Date.now());if(ev==='riichi')send('riichi');else if(ev==='riichiEnd'&&D.autoEnd)send('riichiEnd');
  setStatus(active?(res.on?'立直中（検出中）':'立直中'):(res.on?'検出中…':'監視中'),active?'#b3261e':res.on?'#a06010':'#2a4a7a');
  $('perf').textContent=`解析 ${ms.toFixed(0)}ms / ${g.w}×${g.h}`+(mean<3?' ⚠ 画面が真っ黒です（ウィンドウ取り込み不可の場合はOBS仮想カメラを使用）':'')}
-function send(t){_ws&&_ws.readyState===1&&_ws.send(JSON.stringify({type:t}))}
+function send(t){_ws&&_ws.readyState===1&&_ws.send(JSON.stringify({type:t}));OBSB.send({kind:'cmd',cmd:t,source:'detector'})}
+// OBS接続パネル
+OBSB.mountPanel($('obsPanel'),{extra:'<button onclick="OBSB.send({kind:\'cmd\',cmd:\'riichi\',source:\'test\'})">接続テスト（カットイン再生）</button>'});OBSB.autoStart();
+if(window.obsstudio){$('inObs').style.display='block';$('selfUrl').textContent=location.href}
 // ===== 設定 =====
 const KEYS=['searchMode','margin','work','scales','track','rescan','startHits','endMisses','intervalMs','cooldownMs','graceMs','thOffset','autoEnd'];
 function ui(){KEYS.forEach(k=>{const e=$(k);if(e.type==='checkbox')e.checked=!!D[k];else e.value=D[k]})}

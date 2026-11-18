@@ -16,9 +16,12 @@ function load(){let st={settings:clone(DEFAULTS),riichi:{active:false}};try{cons
  return st}
 let ST=load();const listeners=[];
 function emit(m){listeners.forEach(f=>f(m))}
-function commit(evs=[]){localStorage[KEY]=JSON.stringify(ST);const msg={state:ST,events:evs,t:Date.now()+Math.random()};bc&&bc.postMessage(msg);deliver(msg,true)}
+function commit(evs=[]){localStorage[KEY]=JSON.stringify(ST);const msg={state:ST,events:evs,t:Date.now()+Math.random(),bt:_bt};bc&&bc.postMessage(msg);deliver(msg,true);
+ // OBS WebSocket ブリッジ（設定ページ: 全状態を送信）
+ if(self.OBSB&&OBSB.fullSync&&OBSB.connected)OBSB.sendState(ST,evs)}
 function deliver(msg,local){if(!local)ST=msg.state;msg.events.forEach(e=>emit({type:'event',event:e}));emit({type:'state',settings:ST.settings,riichi:ST.riichi})}
-bc&&(bc.onmessage=e=>deliver(e.data,false));
+// bt: OBSブリッジ経由のメッセージID（複数のブラウザソースが同じイベントを二重処理しないように）
+let _bt=null;bc&&(bc.onmessage=e=>{const m=e.data;if(m.bt!=null&&self._seenBT){if(_seenBT.has(m.bt))return;_markBT(m.bt)}deliver(m,false)});
 // BroadcastChannel非対応時のフォールバック
 addEventListener('storage',e=>{if(e.key===KEY&&!bc){ST=load();emit({type:'state',settings:ST.settings,riichi:ST.riichi})}});
 async function api(p,b){const S=ST.settings,ev=[];
@@ -48,3 +51,22 @@ const idbGet=k=>idbOp('readonly',s=>s.get(k));
 const _urls={};async function mediaURL(u){if(!u||!u.startsWith('idb:'))return u||'';const k=u.slice(4);if(_urls[k])return _urls[k];const b=await idbGet(k);return b?(_urls[k]=URL.createObjectURL(b)):''}
 function overlayURL(appearanceOnly){const S=ST.settings;const s={mode:S.mode,rank:S.rank,friend:S.friend,layout:S.layout,colors:S.colors,media:Object.fromEntries(Object.entries(S.media).map(([k,v])=>[k,typeof v==='string'&&v.startsWith('idb:')?'':v]))};
  return new URL('overlay.html',location.href).href+'?s='+btoa(unescape(encodeURIComponent(JSON.stringify(s))))}
+
+// ===== OBS WebSocket ブリッジ受信（OBSのブラウザソース側） =====
+// obs-websocket の CallVendorRequest(obs-browser / emit_event) で届くイベント
+self._seenBT=new Set();function _markBT(t){_seenBT.add(t);if(_seenBT.size>200)_seenBT.delete(_seenBT.values().next().value)}
+function bridgeIn(d){if(!d)return;if(typeof d.json==='string'){try{d=JSON.parse(d.json)}catch{return}}
+ if(d.t!=null){if(_seenBT.has(d.t))return;_markBT(d.t)}
+ _bt=d.t;try{bridgeApply(d)}finally{_bt=null}}
+function bridgeApply(d){
+ if(d.kind==='cmd'){
+  if(d.cmd==='riichi'&&!ST.riichi.active)api('/api/riichi/declare',{source:d.source||'detector'});
+  else if(d.cmd==='riichiEnd'&&ST.riichi.active)api('/api/riichi/end',{});
+  else if(d.cmd==='api'&&typeof d.path==='string'&&d.path.startsWith('/api/'))api(d.path,d.body||{});
+ }else if(d.kind==='state'&&d.state&&d.state.settings){
+  const st={settings:merge(clone(DEFAULTS),d.state.settings),riichi:d.state.riichi||{active:false}};
+  // 送信元ブラウザのIndexedDBにある動画(idb:)はOBS側では再生できないので、OBS側の設定を維持
+  const om=ST.settings.media||{};for(const k of['cutin','loop']){const v=st.settings.media[k];if(typeof v==='string'&&v.startsWith('idb:'))st.settings.media[k]=om[k]}
+  ST=st;localStorage[KEY]=JSON.stringify(ST);const msg={state:ST,events:Array.isArray(d.events)?d.events:[],t:Date.now()+Math.random(),bt:d.t};
+  bc&&bc.postMessage(msg);deliver(msg,true)}}
+addEventListener('jantama-overlay',e=>bridgeIn(e.detail));
