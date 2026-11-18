@@ -9,6 +9,8 @@ async def main():
   async with async_playwright() as p:
     br=await p.chromium.launch(executable_path='/usr/bin/google-chrome',args=['--autoplay-policy=no-user-gesture-required'])
     obs=await br.new_context(); await obs.add_init_script("window.obsstudio={pluginVersion:'mock'}")
+    if B.startswith('https'):
+      await obs.grant_permissions(['local-network-access'],origin=B.split('/jantama')[0])
     ov=await obs.new_page(); await ov.add_init_script(SIM); errs=[]; ov.on('pageerror',lambda e:errs.append('ov:'+str(e)))
     await ov.goto(B+'overlay.html'); await ov.wait_for_timeout(500)
     await ov.evaluate("()=>{window.evs=[];connectWS(m=>{if(m.type==='event')evs.push(m.event.type)})}")
@@ -17,9 +19,10 @@ async def main():
     await dock.goto(B+'detector.html'); await dock.wait_for_timeout(300)
     print('ドック内警告表示:',await dock.is_visible('#inObs'))
     ch=await br.new_context()
-    if B.startswith('https'):
-      try: await ch.grant_permissions(['local-network-access'],origin=B.split('/jantama')[0])
-      except Exception as e: print('grant失敗',e)
+    if B.startswith('https'):  # 公開版(https)→ws://127.0.0.1 のテスト時はローカルネットワーク許可を付与
+      for c in (obs,ch):
+        try: await c.grant_permissions(['local-network-access'],origin=B.split('/jantama')[0])
+        except Exception as e: print('grant失敗',e)
     ct=await ch.new_page(); ct.on('pageerror',lambda e:errs.append('ct:'+str(e)))
     await ct.goto(B+'control.html'); await ct.wait_for_timeout(300)
     await ct.fill('#obsPanel .pw','wrong'); await ct.dispatch_event('#obsPanel .pw','change'); await ct.click('#obsPanel .c'); await ct.wait_for_timeout(1000)
